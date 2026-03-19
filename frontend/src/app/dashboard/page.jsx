@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { fetchApi } from '../../lib/api';
 
-export default function DashboardPage() {
+function DashboardContent() {
   const searchParams = useSearchParams();
   const userId = searchParams.get('user_id');
   const [accounts, setAccounts] = useState([]);
@@ -60,8 +60,6 @@ export default function DashboardPage() {
       </main>
     );
   }
-
-
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-12">
@@ -137,5 +135,13 @@ function StatCard({ label, value }) {
       <p className="text-sm text-[var(--text-muted)]">{label}</p>
       <p className="mt-2 text-3xl font-bold">{value}</p>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[70vh] items-center justify-center">Loading...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

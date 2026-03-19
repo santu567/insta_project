@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-import { fetchApi, API_URL } from '../../lib/api';
+import { fetchApi } from '../../lib/api';
 
-export default function LoginPage() {
+function LoginContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
   const [loading, setLoading] = useState(false);
@@ -48,5 +48,13 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[70vh] items-center justify-center">Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }
