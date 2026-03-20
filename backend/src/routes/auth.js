@@ -170,11 +170,40 @@ router.get('/instagram/callback', async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard`);
+    // Close popup and message parent window
+    res.send(`
+      <html>
+        <body>
+          <h2>Authentication successful! Redirecting...</h2>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('oauth_success', '*');
+            } else {
+              window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard';
+            }
+          </script>
+        </body>
+      </html>
+    `);
   } catch (err) {
     console.error('OAuth processing error FULL:', err);
     console.error('OAuth processing error:', err.response?.data || err.message || err);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_processing_failed`);
+    
+    // Close popup and message parent window with error
+    res.send(`
+      <html>
+        <body>
+          <h2>Authentication failed. Redirecting...</h2>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('oauth_error', '*');
+            } else {
+              window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_processing_failed';
+            }
+          </script>
+        </body>
+      </html>
+    `);
   }
 });
 
