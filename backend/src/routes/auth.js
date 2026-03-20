@@ -12,11 +12,12 @@ function buildOAuthUrl(userId) {
     redirect_uri: `${process.env.API_URL}/auth/instagram/callback`,
     scope: 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management',
     response_type: 'code',
-    display: 'popup',
-    extras: JSON.stringify({ "setup": { "channel": "IG_API_ONBOARDING" } }),
+    display: 'page',
+    auth_type: 'rerequest',
+    extras: JSON.stringify({ setup: { channel: "IG_API_ONBOARDING" } }),
     state: userId
   });
-  return `https://www.facebook.com/dialog/oauth?${params}`;
+  return `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
 }
 
 // API endpoint — returns the OAuth URL as JSON

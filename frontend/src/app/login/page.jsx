@@ -14,49 +14,57 @@ function LoginContent() {
   const handleConnect = () => {
     setLoading(true);
 
-    // Open OAuth in a popup window
-    const popup = window.open(
-      `${API_URL}/auth/instagram/redirect?user_id=anonymous`,
-      'InstagramAuth',
-      'width=600,height=700'
-    );
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    const redirectUrl = `${API_URL}/auth/instagram/redirect?user_id=anonymous`;
 
-    // Listen for messages from the popup
-    const handleMessage = (event) => {
-      // Allow messages from any origin for this specific OAuth handshake
-      if (event.data === 'oauth_success') {
-        window.removeEventListener('message', handleMessage);
-        popup?.close();
-        // Redirect to dashboard on success
-        window.location.href = '/dashboard';
-      } else if (event.data === 'oauth_error') {
-        window.removeEventListener('message', handleMessage);
-        popup?.close();
-        setLoading(false);
-        // Force reload with error
-        window.location.href = '/login?error=auth_processing_failed';
-      }
-    };
+    if (isMobile) {
+      // Direct navigation to backend redirect on mobile minimizing deep links
+      window.location.href = redirectUrl;
+    } else {
+      // Open OAuth in a popup window for desktop
+      const popup = window.open(
+        redirectUrl,
+        'InstagramAuth',
+        'width=600,height=700'
+      );
 
-    window.addEventListener('message', handleMessage);
+      // Listen for messages from the popup
+      const handleMessage = (event) => {
+        if (event.data === 'oauth_success') {
+          window.removeEventListener('message', handleMessage);
+          popup?.close();
+          window.location.href = '/dashboard';
+        } else if (event.data === 'oauth_error') {
+          window.removeEventListener('message', handleMessage);
+          popup?.close();
+          setLoading(false);
+          window.location.href = '/login?error=auth_processing_failed';
+        }
+      };
 
-    // Check if user manually closed the popup
-    const checkClosed = setInterval(() => {
-      if (popup && popup.closed) {
-        clearInterval(checkClosed);
-        if (loading) setLoading(false);
-        window.removeEventListener('message', handleMessage);
-      }
-    }, 1000);
+      window.addEventListener('message', handleMessage);
+
+      const checkClosed = setInterval(() => {
+        if (popup && popup.closed) {
+          clearInterval(checkClosed);
+          if (loading) setLoading(false);
+          window.removeEventListener('message', handleMessage);
+        }
+      }, 1000);
+    }
   };
 
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-4">
       <div className="w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
         <h1 className="mb-2 text-2xl font-bold">Connect Instagram</h1>
-        <p className="mb-8 text-sm text-[var(--text-muted)]">
+        <p className="mb-6 text-sm text-[var(--text-muted)]">
           Use your Instagram Business or Creator account to get started.
         </p>
+
+        <div className="mb-8 rounded-lg bg-orange-500/10 px-4 py-3 text-xs text-orange-400 border border-orange-500/20">
+          <strong>Note:</strong> If login gets stuck or doesn't work inside the Instagram app, please open this page in Chrome or Safari browser.
+        </div>
         
         {error && !loading && (
           <div className="mb-6 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
