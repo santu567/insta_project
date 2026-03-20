@@ -12,6 +12,7 @@ function buildOAuthUrl(userId) {
     redirect_uri: `${process.env.API_URL}/auth/instagram/callback`,
     scope: 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management',
     response_type: 'code',
+    display: 'popup',
     extras: JSON.stringify({ "setup": { "channel": "IG_API_ONBOARDING" } }),
     state: userId
   });
