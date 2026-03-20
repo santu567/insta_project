@@ -17,7 +17,8 @@ function buildOAuthUrl(userId) {
     extras: JSON.stringify({ setup: { channel: "IG_API_ONBOARDING" } }),
     state: userId
   });
-  return `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+  // Use business.facebook.com to force the Meta Business Login flow, which stays in the web browser
+  return `https://business.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
 }
 
 // API endpoint — returns the OAuth URL as JSON
