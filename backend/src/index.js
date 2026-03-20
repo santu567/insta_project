@@ -33,7 +33,8 @@ const PORT = process.env.PORT || 4000;
 // CORS: Allow both production frontend and localhost for development
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'https://mica-pacifical-shiningly.ngrok-free.dev'
 ].filter(Boolean);
 
 app.use(cors({
