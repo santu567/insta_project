@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 
 const router = Router();
 
-// Step 1: Generate OAuth URL (Authorization Code Flow)
+// Step 1: Generate OAuth URL (Authorization Code Flow — browser only)
 router.get('/instagram/url', (req, res) => {
   const userId = req.query.user_id || 'anonymous';
   const params = new URLSearchParams({
@@ -13,7 +13,6 @@ router.get('/instagram/url', (req, res) => {
     redirect_uri: `${process.env.API_URL}/auth/instagram/callback`,
     scope: 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management',
     response_type: 'code',
-    extras: JSON.stringify({ "setup": { "channel": "IG_API_ONBOARDING" } }),
     state: userId
   });
   const url = `https://www.facebook.com/dialog/oauth?${params}`;
