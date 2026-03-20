@@ -5,19 +5,33 @@ import jwt from 'jsonwebtoken';
 
 const router = Router();
 
-// Step 1: Generate OAuth URL (Authorization Code Flow — browser only)
-router.get('/instagram/url', (req, res) => {
-  const userId = req.query.user_id || 'anonymous';
+// Build OAuth URL helper
+function buildOAuthUrl(userId) {
   const params = new URLSearchParams({
     client_id: process.env.META_APP_ID,
     redirect_uri: `${process.env.API_URL}/auth/instagram/callback`,
     scope: 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management',
     response_type: 'code',
+    extras: JSON.stringify({ "setup": { "channel": "IG_API_ONBOARDING" } }),
     state: userId
   });
-  const url = `https://www.facebook.com/dialog/oauth?${params}`;
+  return `https://www.facebook.com/dialog/oauth?${params}`;
+}
+
+// API endpoint — returns the OAuth URL as JSON
+router.get('/instagram/url', (req, res) => {
+  const userId = req.query.user_id || 'anonymous';
+  const url = buildOAuthUrl(userId);
   console.log("OAuth URL:", url);
   res.json({ url });
+});
+
+// Server-side redirect — directly sends user to OAuth (prevents mobile deep-linking)
+router.get('/instagram/redirect', (req, res) => {
+  const userId = req.query.user_id || 'anonymous';
+  const url = buildOAuthUrl(userId);
+  console.log("OAuth Redirect:", url);
+  res.redirect(url);
 });
 
 // Step 2: Handle the authorization code callback
