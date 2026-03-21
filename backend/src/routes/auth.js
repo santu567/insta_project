@@ -2,11 +2,12 @@ import { Router } from 'express';
 import axios from 'axios';
 import pool from '../db/index.js';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 
 // Build OAuth URL helper
-function buildOAuthUrl(userId) {
+function buildOAuthUrl(statusId) {
   const params = new URLSearchParams({
     client_id: process.env.META_APP_ID,
     redirect_uri: `${process.env.API_URL}/auth/instagram/callback`,
@@ -14,34 +15,52 @@ function buildOAuthUrl(userId) {
     response_type: 'code',
     display: 'page',
     extras: JSON.stringify({ setup: { channel: "IG_API_ONBOARDING" } }),
-    state: userId
+    state: statusId
   });
   return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
 }
 
+// POST /instagram/start — Start the polling flow
+router.post('/instagram/start', async (req, res) => {
+  try {
+    const statusId = randomUUID();
+    const userId = req.body.user_id || 'anonymous';
+    await pool.query(
+      'INSERT INTO oauth_sessions (id, status, message) VALUES ($1, $2, $3)',
+      [statusId, 'pending', userId]
+    );
+    res.json({ 
+      statusId, 
+      redirectUrl: `${process.env.API_URL}/auth/instagram/redirect?state=${statusId}` 
+    });
+  } catch (err) {
+    console.error('Start error:', err);
+    res.status(500).json({ error: 'Failed to start auth flow' });
+  }
+});
+
 // API endpoint — returns the OAuth URL as JSON
 router.get('/instagram/url', (req, res) => {
-  const userId = req.query.user_id || 'anonymous';
-  const url = buildOAuthUrl(userId);
-  console.log("OAuth URL:", url);
+  const statusId = req.query.state || 'anonymous';
+  const url = buildOAuthUrl(statusId);
   res.json({ url });
 });
 
-// Server-side redirect — directly sends user to OAuth (prevents mobile deep-linking)
+// Server-side redirect — directly sends user to OAuth wrapper
 router.get('/instagram/redirect', (req, res) => {
-  const userId = req.query.user_id || 'anonymous';
-  const url = buildOAuthUrl(userId);
-  console.log("OAuth Redirect:", url);
+  const statusId = req.query.state || 'anonymous';
+  const url = buildOAuthUrl(statusId);
   res.redirect(url);
 });
 
 // Step 2: Handle the authorization code callback
 router.get('/instagram/callback', async (req, res) => {
-  const { code, state: userId, error: oauthError } = req.query;
+  const { code, state, error: oauthError } = req.query;
 
   if (oauthError || !code) {
     console.error('OAuth error or no code:', oauthError);
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=no_code`);
+    if (state) await pool.query("UPDATE oauth_sessions SET status = 'failed', message = $1 WHERE id = $2", ['auth_cancelled', state]).catch(console.error);
+    return res.send(`<html><body style="font-family: sans-serif; text-align: center; padding-top: 50px;"><h2>Authentication cancelled. Please close this window.</h2></body></html>`);
   }
 
   try {
@@ -124,22 +143,13 @@ router.get('/instagram/callback', async (req, res) => {
     // Save to DB
     let dbUserId = null;
 
-    const isValidUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(userId);
-
-    if (isValidUUID) {
-      const userResult = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
-      if (userResult.rows.length > 0) {
-        dbUserId = userResult.rows[0].id;
-      }
-    }
-
-    if (!dbUserId) {
-      const newUser = await pool.query(
-        'INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id',
-        [`ig_${igUserId}@insta-link.local`]
-      );
-      dbUserId = newUser.rows[0].id;
-    }
+    // We no longer rely on state being a valid user_id UUID, state is the statusId
+    // We will just use email insertion as anonymous fallback, or we can pre-associate user ID later.
+    const newUser = await pool.query(
+      'INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id',
+      [`ig_${igUserId}@insta-link.local`]
+    );
+    dbUserId = newUser.rows[0].id;
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 60);
@@ -156,32 +166,20 @@ router.get('/instagram/callback', async (req, res) => {
 
     console.log('✅ Account saved to DB!');
 
-    // Generate JWT
-    const token = jwt.sign(
-      { id: dbUserId, email: `ig_${igUserId}@insta-link.local` },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+    // Update oauth_sessions status
+    await pool.query(
+      'UPDATE oauth_sessions SET status = $1, user_id = $2 WHERE id = $3',
+      ['ok', dbUserId, state]
     );
 
-    // Set JWT in HTTP-Only Cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
-
-    // Close popup and message parent window
+    // Close popup visually
     res.send(`
       <html>
-        <body>
-          <h2>Authentication successful! Redirecting...</h2>
+        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+          <h2>Authentication successful!</h2>
+          <p>You may safely close this tab or window and return to the main app.</p>
           <script>
-            if (window.opener) {
-              window.opener.postMessage('oauth_success', '*');
-            } else {
-              window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard';
-            }
+            setTimeout(() => { if (window.opener) window.close(); }, 2000);
           </script>
         </body>
       </html>
@@ -190,21 +188,60 @@ router.get('/instagram/callback', async (req, res) => {
     console.error('OAuth processing error FULL:', err);
     console.error('OAuth processing error:', err.response?.data || err.message || err);
     
-    // Close popup and message parent window with error
+    // Attempt to update the status record with the error
+    if (state && typeof state === 'string') {
+       await pool.query("UPDATE oauth_sessions SET status = 'failed', message = $1 WHERE id = $2", [err.message, state]).catch(console.error);
+    }
+    
+    // Explicit close wrapper for failure
     res.send(`
       <html>
-        <body>
-          <h2>Authentication failed. Redirecting...</h2>
+        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+          <h2 style="color: red;">Authentication failed.</h2>
+          <p>Please close this window and try again.</p>
+          <p style="color: #666; font-size: 13px;">Error: ${err.message}</p>
           <script>
-            if (window.opener) {
-              window.opener.postMessage('oauth_error', '*');
-            } else {
-              window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_processing_failed';
-            }
+            setTimeout(() => { if (window.opener) window.close(); }, 3000);
           </script>
         </body>
       </html>
     `);
+  }
+});
+
+// GET /instagram/status/:id
+router.get('/instagram/status/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('SELECT status, user_id, message FROM oauth_sessions WHERE id = $1', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    const session = result.rows[0];
+    
+    if (session.status === 'ok' && session.user_id) {
+       const userRes = await pool.query('SELECT email FROM users WHERE id = $1', [session.user_id]);
+       const email = userRes.rows[0]?.email || '';
+       const token = jwt.sign(
+         { id: session.user_id, email },
+         process.env.JWT_SECRET,
+         { expiresIn: '7d' }
+       );
+       res.cookie('token', token, {
+         httpOnly: true,
+         secure: true,
+         sameSite: 'none',
+         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+       });
+       return res.json({ state: 'ok' });
+    }
+    
+    res.json({ state: session.status, message: session.message });
+  } catch (err) {
+    console.error('Status check error:', err);
+    res.status(500).json({ error: 'Internal server error checking status' });
   }
 });
 
