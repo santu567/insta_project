@@ -63,7 +63,22 @@ function DashboardContent() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-12">
-      <h1 className="mb-8 text-2xl font-bold">Dashboard</h1>
+      <div className="mb-8 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <button
+          onClick={async () => {
+            try {
+              await fetchApi('/auth/logout', { method: 'POST' });
+            } catch (err) {
+              console.error('Logout failed:', err);
+            }
+            window.location.href = '/login';
+          }}
+          className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-neutral-800 hover:text-white"
+        >
+          Log Out
+        </button>
+      </div>
       {accounts.length > 0 && (
         <p className="mb-6 text-[var(--text-muted)]">
           Connected: {accounts.map((a) => `@${a.username || a.ig_user_id}`).join(', ')}
