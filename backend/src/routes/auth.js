@@ -166,11 +166,30 @@ router.get('/instagram/callback', async (req, res) => {
 
     console.log('✅ Account saved to DB!');
 
-    // Update oauth_sessions status
-    await pool.query(
-      'UPDATE oauth_sessions SET status = $1, user_id = $2 WHERE id = $3',
-      ['ok', dbUserId, state]
+    const isValidUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(state);
+
+    if (isValidUUID) {
+      // Update oauth_sessions status
+      await pool.query(
+        'UPDATE oauth_sessions SET status = $1, user_id = $2 WHERE id = $3',
+        ['ok', dbUserId, state]
+      );
+    }
+    
+    // Generate JWT (Reinstate cookie generation directly in callback for Safari cross-site compatibility)
+    const token = jwt.sign(
+      { id: dbUserId, email: `ig_${igUserId}@insta-link.local` },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
     );
+
+    // Set JWT in HTTP-Only Cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
 
     // Close popup visually
     res.send(`
@@ -179,7 +198,15 @@ router.get('/instagram/callback', async (req, res) => {
           <h2>Authentication successful!</h2>
           <p>You may safely close this tab or window and return to the main app.</p>
           <script>
-            setTimeout(() => { if (window.opener) window.close(); }, 2000);
+            // Try to close 
+            if (window.opener) {
+                window.close();
+            }
+            
+            // If it didn't close (top level nav), elegantly redirect
+            setTimeout(() => { 
+                window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard';
+            }, 1000);
           </script>
         </body>
       </html>
@@ -189,7 +216,8 @@ router.get('/instagram/callback', async (req, res) => {
     console.error('OAuth processing error:', err.response?.data || err.message || err);
     
     // Attempt to update the status record with the error
-    if (state && typeof state === 'string') {
+    const isValidUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(state);
+    if (state && isValidUUID) {
        await pool.query("UPDATE oauth_sessions SET status = 'failed', message = $1 WHERE id = $2", [err.message, state]).catch(console.error);
     }
     
